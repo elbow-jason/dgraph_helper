@@ -274,7 +274,8 @@ func (cfg *allConfig) bindallFlag() string {
 }
 
 func (cfg *allConfig) configFlag() string {
-	return fmt.Sprintf("--config=%s", cfg.yamlFilename)
+	filepath := path.Join(cfg.installDir, cfg.yamlFilename)
+	return fmt.Sprintf("--config=%s", filepath)
 }
 
 func (cfg *allConfig) downloadAndInstallBinary() {
