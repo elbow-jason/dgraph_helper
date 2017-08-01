@@ -452,7 +452,7 @@ func Install() {
 }
 
 func reloadDaemons() {
-	err := runCommand("systemctl", "daemons-reload")
+	err := runCommand("systemctl", "daemon-reload")
 	if err != nil {
 		log.Fatal(err)
 	}
