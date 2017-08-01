@@ -278,6 +278,13 @@ func (cfg *allConfig) configFlag() string {
 	return fmt.Sprintf("--config=%s", filepath)
 }
 
+func (cfg *allConfig) myFlag() string {
+	if cfg.My == "" {
+		return ""
+	}
+	return fmt.Sprintf("--my=%s", cfg.My)
+}
+
 func (cfg *allConfig) downloadAndInstallBinary() {
 	filename := "install_dgraph.sh"
 	if err := runCommand("curl", "https://nightly.dgraph.io", "-o", filename); err != nil {
@@ -294,7 +301,7 @@ func (cfg *allConfig) downloadAndInstallBinary() {
 }
 
 func (cfg *allConfig) startDgraphCommand() string {
-	return fmt.Sprintf("/usr/local/bin/dgraph %s %s", cfg.bindallFlag(), cfg.configFlag())
+	return fmt.Sprintf("/usr/local/bin/dgraph %s %s %s", cfg.bindallFlag(), cfg.configFlag(), cfg.myFlag())
 }
 
 func (cfg *allConfig) systemDUnit() string {
