@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -67,8 +68,8 @@ type allConfig struct {
 	MemoryMb     float64 `yaml:"memory_mb"`
 	// command-line fields
 	Bindall bool
-	Peer    string // IP_ADDRESS:PORT of any healthy peer.
-	My      string // addr:port of this server, so other Dgraph servers can talk to this
+	// Peer    string // IP_ADDRESS:PORT of any healthy peer.
+	// My      string // addr:port of this server, so other Dgraph servers can talk to this
 
 	// // Engine Tuning Fields
 	// Pending          int    // (default 1000)  Number of pending queries. Useful for rate limiting.
@@ -112,7 +113,7 @@ func defaultConfig() allConfig {
 		GrpcPort:       9080,
 		Trace:          0.33,
 		Gentlecommit:   0.1,
-		MemoryMb:       1024.00,
+		MemoryMb:       1025.00,
 		Debugmode:      false,
 		SelectedGroups: []int{},
 		TotalGroups:    2,
@@ -120,8 +121,8 @@ func defaultConfig() allConfig {
 	}
 }
 
-func (cfg allConfig) toYAML() ([]byte, error) {
-	return yaml.Marshal(map[string]interface{}{
+func (cfg *allConfig) toYAML() ([]byte, error) {
+	params := map[string]interface{}{
 		"p":            cfg.P,
 		"w":            cfg.W,
 		"export":       cfg.Export,
@@ -134,7 +135,17 @@ func (cfg allConfig) toYAML() ([]byte, error) {
 		"trace":        cfg.Trace,
 		"debugmode":    cfg.Debugmode,
 		"memory_mb":    cfg.MemoryMb,
-	})
+		"bindall":      cfg.Bindall,
+	}
+	peer := cfg.Peer()
+	if peer != "" {
+		params["peer"] = peer
+	}
+	my := cfg.My()
+	if my != "" {
+		params["my"] = my
+	}
+	return yaml.Marshal(params)
 }
 
 func (cfg *allConfig) wantsToChangeSubdirectories() bool {
@@ -225,20 +236,24 @@ func (cfg *allConfig) changePeer() {
 }
 func (cfg *allConfig) changePeerIP() {
 	cfg.PeerIP = prompt.InputString("The IP of a healty peer in the cluster?", cfg.PeerIP, prompt.IPv4Validator)
-	cfg.updatePeer()
 }
 
 func (cfg *allConfig) changePeerPort() {
 	cfg.PeerPort = prompt.InputInteger("The workerport of the same peer", cfg.PeerPort, true, prompt.PortValidator)
-	cfg.updatePeer()
 }
 
-func (cfg *allConfig) updatePeer() {
+func (cfg *allConfig) Peer() string {
 	if cfg.PeerIP == "" {
-		cfg.Peer = ""
-	} else {
-		cfg.Peer = fmt.Sprintf("%s:%d", cfg.PeerIP, cfg.PeerPort)
+		return ""
 	}
+	return fmt.Sprintf("%s:%d", cfg.PeerIP, cfg.PeerPort)
+}
+
+func (cfg *allConfig) My() string {
+	if cfg.MyIP == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d", cfg.MyIP, cfg.Workerport)
 }
 
 func (cfg *allConfig) changeTotalGroups() {
@@ -279,10 +294,11 @@ func (cfg *allConfig) configFlag() string {
 }
 
 func (cfg *allConfig) myFlag() string {
-	if cfg.My == "" {
+	my := cfg.My()
+	if my == "" {
 		return ""
 	}
-	return fmt.Sprintf("--my=%s", cfg.My)
+	return fmt.Sprintf("--my=%s", my)
 }
 
 func (cfg *allConfig) downloadAndInstallBinary() {
@@ -301,7 +317,7 @@ func (cfg *allConfig) downloadAndInstallBinary() {
 }
 
 func (cfg *allConfig) startDgraphCommand() string {
-	return fmt.Sprintf("/usr/local/bin/dgraph %s %s %s", cfg.bindallFlag(), cfg.configFlag(), cfg.myFlag())
+	return fmt.Sprintf("/usr/local/bin/dgraph %s", cfg.configFlag())
 }
 
 func (cfg *allConfig) systemDUnit() string {
@@ -314,14 +330,6 @@ After=network.target network-online.target
 [Service]	
 ExecStart = %s
 `, cfg.startDgraphCommand())
-}
-
-func (cfg *allConfig) updateMy() {
-	if cfg.MyIP == "" {
-		cfg.My = ""
-	} else {
-		cfg.My = fmt.Sprintf("%s:%d", cfg.MyIP, cfg.Workerport)
-	}
 }
 
 func (cfg *allConfig) ensureGroupsRangeValidator() survey.Validator {
@@ -348,7 +356,7 @@ func (cfg *allConfig) changeGentlecommit() {
 }
 
 func (cfg *allConfig) changeMemoryMb() {
-	cfg.MemoryMb = prompt.InputFloat64("Estimated memory the process can take", cfg.MemoryMb, prompt.AtLeast1024)
+	cfg.MemoryMb = prompt.InputFloat64("Estimated memory the process can take", cfg.MemoryMb, prompt.AtLeast1025)
 }
 
 func (cfg *allConfig) changeDebugMode() {
@@ -364,9 +372,9 @@ func (cfg *allConfig) printConfigTable() {
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"Key", "Value", "Description", "Destination"})
 	data := [][]string{
-		[]string{"p", cfg.P, "Postings Files Directory", cfg.P},
-		[]string{"w", cfg.W, "Write-Ahead Logs Directory", cfg.W},
-		[]string{"export", cfg.Export, "Exports Directory", cfg.Export},
+		[]string{"p", cfg.P, "Postings Files Directory", yamlFilepath},
+		[]string{"w", cfg.W, "Write-Ahead Logs Directory", yamlFilepath},
+		[]string{"export", cfg.Export, "Exports Directory", yamlFilepath},
 		[]string{"port", int2string(cfg.Port), "HTTP port", yamlFilepath},
 		[]string{"grpc_port", int2string(cfg.GrpcPort), "gRPC port", yamlFilepath},
 		[]string{"workerport", int2string(cfg.Workerport), "Internal worker port", yamlFilepath},
@@ -377,13 +385,16 @@ func (cfg *allConfig) printConfigTable() {
 		[]string{"gentlecommit", float2string(cfg.Gentlecommit), "Dirty posting commit freq", yamlFilepath},
 		[]string{"trace", float2string(cfg.Trace), "Ratio of queries to trace", yamlFilepath},
 		[]string{"debugmode", bool2string(cfg.Debugmode), "Debug mode", yamlFilepath},
-		[]string{"bindall", bool2string(cfg.Bindall), cfg.serverStartsOn(), cfg.bindallFlag()},
+		[]string{"bindall", bool2string(cfg.Bindall), cfg.serverStartsOn(), yamlFilepath},
+		[]string{"my", cfg.My(), "This server's IP:PORT", yamlFilepath},
+		[]string{"peer", cfg.Peer(), "Peer's IP:PORT", yamlFilepath},
 	}
 	table.SetAlignment(tablewriter.ALIGN_LEFT)
 	table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
 	table.SetCenterSeparator("|")
 	table.AppendBulk(data) // Add Bulk Data
 	table.Render()
+	fmt.Printf("dgraph command is %s\n", cfg.startDgraphCommand())
 }
 
 func (cfg *allConfig) createInstallDir() {
@@ -407,7 +418,7 @@ func (cfg *allConfig) serverStartsOn() string {
 // writes files to selected directories, installs a systemd unit dgraph,
 // and starts dgraph as a service
 func Install() {
-
+	fmt.Println("dgraph_helper running install...")
 	if err := ensureLinux(); err != nil {
 		log.Fatal(err)
 	}
@@ -451,10 +462,13 @@ func Install() {
 
 	if cfg.wantsToCommitConfig() {
 		fmt.Println("Installing...")
+		cfg.createInstallDir()
+		cfg.createSubirs()
 		cfg.downloadAndInstallBinary()
 		cfg.writeConfigDotYaml()
 		cfg.writeSystemDUnit()
 		startDgraphService()
+		time.Sleep(time.Second)
 		statusDgraphService()
 	}
 }

@@ -29,15 +29,15 @@ func float64Parser(numStr string) (float64, error) {
 	return strconv.ParseFloat(numStr, 64)
 }
 
-// AtLeast1024 .
-func AtLeast1024(answer interface{}) error {
+// AtLeast1025 .
+func AtLeast1025(answer interface{}) error {
 	answerStr := answer.(string)
 	num, err := float64Parser(answerStr)
 	if err != nil {
 		return err
 	}
-	if num < 1024.0 {
-		return fmt.Errorf("Answer must be at least 1024.00. Got %.2f", num)
+	if num < 1025.00 {
+		return fmt.Errorf("Answer must be at least 1025.00. Got %.2f", num)
 	}
 	return nil
 }
